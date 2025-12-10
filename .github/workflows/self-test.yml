@@ -1,0 +1,31 @@
+name: Self-test GreenCode Action
+on: [push]
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run local GreenCode action
+        id: run_local
+        uses: ./   # use this repo's action.yml (composite action)
+        with:
+          path: "${{ github.workspace }}/examples"   # analyze examples folder
+          mode: "safe-subprocess"
+          json: "true"
+
+      - name: Show outputs
+        run: |
+          echo "Action outputs (from composite action):"
+          echo "score = ${{ steps.run_local.outputs.score }}"
+          echo "result-json-path = ${{ steps.run_local.outputs.result-json-path }}"
+          echo "---- result.json preview ----"
+          if [ -f "./greencode_action_output.json" ]; then
+            head -n 80 greencode_action_output.json || true
+          elif [ -f "${{ github.workspace }}/greencode_action_output.json" ]; then
+            head -n 80 "${{ github.workspace }}/greencode_action_output.json" || true
+          else
+            echo "greencode_action_output.json not found in workspace"
+          fi

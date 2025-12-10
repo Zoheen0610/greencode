@@ -1,0 +1,131 @@
+=== Running target in-process under tracer (side-effects WILL run). Use --safe-subprocess for safer energy-only mode. ===
+0
+0
+4
+18
+48
+{
+  "target": "examples/example1.py",
+  "static": {
+    "examples\\example1.py:<global>": {
+      "name": "<global>",
+      "lineno": null,
+      "loops": 1,
+      "max_loop_depth": 1,
+      "func_calls": 3,
+      "io_ops": 1,
+      "conditionals": 0,
+      "recursion": [],
+      "comprehensions": 0,
+      "heavy_allocations_in_loops": [],
+      "loop_lines": [
+        8
+      ],
+      "cyclomatic": 1,
+      "score": 7.7,
+      "filename": "examples\\example1.py"
+    },
+    "examples\\example1.py:calculate_sum": {
+      "name": "calculate_sum",
+      "lineno": 1,
+      "loops": 2,
+      "max_loop_depth": 2,
+      "func_calls": 2,
+      "io_ops": 0,
+      "conditionals": 0,
+      "recursion": [],
+      "comprehensions": 0,
+      "heavy_allocations_in_loops": [],
+      "loop_lines": [
+        3,
+        4
+      ],
+      "cyclomatic": 1,
+      "score": 10.8,
+      "filename": "examples\\example1.py"
+    }
+  },
+  "callsite_summary": [
+    {
+      "scope": "examples\\example1.py:<global>",
+      "loops": 1,
+      "max_loop_depth": 1,
+      "loop_lines": [
+        8
+      ],
+      "heavy_allocations_in_loops": [],
+      "func_calls_sites": 3,
+      "io_ops_sites": 1,
+      "cyclomatic": 1,
+      "score": 7.7,
+      "recursion": [],
+      "comprehensions": 0,
+      "conditionals": 0,
+      "filename": "examples\\example1.py"
+    },
+    {
+      "scope": "examples\\example1.py:calculate_sum",
+      "loops": 2,
+      "max_loop_depth": 2,
+      "loop_lines": [
+        3,
+        4
+      ],
+      "heavy_allocations_in_loops": [],
+      "func_calls_sites": 2,
+      "io_ops_sites": 0,
+      "cyclomatic": 1,
+      "score": 10.8,
+      "recursion": [],
+      "comprehensions": 0,
+      "conditionals": 0,
+      "filename": "examples\\example1.py"
+    }
+  ],
+  "functions_runtime": [
+    {
+      "name": "examples\\example1.py:<global>",
+      "runtime_calls": 0
+    },
+    {
+      "name": "examples\\example1.py:calculate_sum",
+      "runtime_calls": 5
+    }
+  ],
+  "loop_iterations": [
+    {
+      "lineno": 3,
+      "estimated_iterations": 15
+    },
+    {
+      "lineno": 4,
+      "estimated_iterations": 40
+    },
+    {
+      "lineno": 8,
+      "estimated_iterations": 6
+    }
+  ],
+  "energy": {
+    "wall_seconds": 0.006750799948349595,
+    "cpu_time_seconds": 0.006750799948349595,
+    "energy_joules": 0.10126199922524393,
+    "energy_kwh": 2.8128333118123313e-08,
+    "co2_grams": 1.1251333247249326e-05
+  },
+  "raw_dynamic_calls": {
+    "<module>": 1,
+    "calculate_sum": 5
+  },
+  "raw_dynamic_lines": {
+    "1": 1,
+    "8": 6,
+    "9": 5,
+    "2": 5,
+    "3": 15,
+    "6": 5,
+    "4": 40,
+    "5": 30
+  },
+  "total_score": 18.5
+}

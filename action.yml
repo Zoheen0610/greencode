@@ -70,25 +70,30 @@ runs:
           JSON_OPT="--json"
         fi
 
-        # pick analyzer script inside action repo (we expect src/hybrid_full_analyzer.py present)
-        if [ -f src/hybrid_full_analyzer.py ]; then
-          SCRIPT="src/hybrid_full_analyzer.py"
-        elif [ -f src/static_analyzer.py ]; then
-          SCRIPT="src/static_analyzer.py"
+        # Prefer analyzer inside action repo ($GITHUB_ACTION_PATH) otherwise fallback to caller workspace
+        if [ -f "${GITHUB_ACTION_PATH}/src/hybrid_full_analyzer.py" ]; then
+          SCRIPT="${GITHUB_ACTION_PATH}/src/hybrid_full_analyzer.py"
+        elif [ -f "${GITHUB_ACTION_PATH}/src/static_analyzer.py" ]; then
+          SCRIPT="${GITHUB_ACTION_PATH}/src/static_analyzer.py"
+        elif [ -f "./src/hybrid_full_analyzer.py" ]; then
+          SCRIPT="./src/hybrid_full_analyzer.py"
+        elif [ -f "./src/static_analyzer.py" ]; then
+          SCRIPT="./src/static_analyzer.py"
         else
           echo "No analyzer script found (expected src/hybrid_full_analyzer.py or src/static_analyzer.py)"
           exit 2
         fi
 
         OUT="greencode_action_output.json"
-        # If mode is trace, pass --trace; otherwise use safe-subprocess
+
         if [ "$MODE" = "trace" ]; then
           python "$SCRIPT" "$TARGET" --args "$ARGS" --trace --power "$POWER" --ci "$CI" $JSON_OPT > "$OUT" || true
         else
           python "$SCRIPT" "$TARGET" --args "$ARGS" --safe-subprocess --power "$POWER" --ci "$CI" $JSON_OPT > "$OUT" || true
         fi
 
-        echo "result_json=$PWD/$OUT" >> $GITHUB_OUTPUT
+        # export outputs for composite action consumer steps (names must match action.yml outputs)
+        echo "result-json-path=$PWD/$OUT" >> $GITHUB_OUTPUT
 
         SCORE=$(python - <<'PY'
 import json,sys
@@ -117,4 +122,4 @@ PY
       shell: bash
       run: |
         echo "Green Score = ${{ steps.run_analyzer.outputs.score }}"
-        echo "Result JSON: ${{ steps.run_analyzer.outputs.result_json }}"
+        echo "Result JSON: ${{ steps.run_analyzer.outputs.result-json-path }}"
