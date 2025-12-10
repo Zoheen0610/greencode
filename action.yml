@@ -1,0 +1,120 @@
+name: "GreenCode Hybrid Analyzer"
+description: "Run GreenCode hybrid analyzer (static + dynamic) and emit a Green Score"
+author: "Zoheen"
+branding:
+  color: "blue"
+  icon: "zap"
+
+inputs:
+  path:
+    description: "Path to target file or directory to analyze (default repo root). Use '${{ github.workspace }}' to analyze caller repo."
+    required: false
+    default: "."
+  mode:
+    description: "Run mode: 'trace' (in-process tracer) or 'safe-subprocess' (safer energy-only)."
+    required: false
+    default: "safe-subprocess"
+  power:
+    description: "CPU power in watts used for energy estimate."
+    required: false
+    default: "15.0"
+  ci:
+    description: "Carbon intensity (g CO2 per kWh)."
+    required: false
+    default: "400.0"
+  args:
+    description: "Optional space-separated args to pass to the target script (quoted)."
+    required: false
+    default: ""
+  json:
+    description: "If 'true', analyzer prints JSON output and action will forward it."
+    required: false
+    default: "true"
+
+outputs:
+  score:
+    description: "Computed Green Score (heuristic)"
+  result-json-path:
+    description: "Path to analyzer JSON output (if produced)"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository (caller workspace)
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install runtime deps (optional)
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install psutil || true
+
+    - name: Run hybrid analyzer
+      id: run_analyzer
+      shell: bash
+      run: |
+        TARGET="${{ inputs.path }}"
+        MODE="${{ inputs.mode }}"
+        POWER="${{ inputs.power }}"
+        CI="${{ inputs.ci }}"
+        ARGS="${{ inputs.args }}"
+        JSON_FLAG="${{ inputs.json }}"
+
+        JSON_OPT=""
+        if [ "$JSON_FLAG" = "true" ]; then
+          JSON_OPT="--json"
+        fi
+
+        # pick analyzer script inside action repo (we expect src/hybrid_full_analyzer.py present)
+        if [ -f src/hybrid_full_analyzer.py ]; then
+          SCRIPT="src/hybrid_full_analyzer.py"
+        elif [ -f src/static_analyzer.py ]; then
+          SCRIPT="src/static_analyzer.py"
+        else
+          echo "No analyzer script found (expected src/hybrid_full_analyzer.py or src/static_analyzer.py)"
+          exit 2
+        fi
+
+        OUT="greencode_action_output.json"
+        # If mode is trace, pass --trace; otherwise use safe-subprocess
+        if [ "$MODE" = "trace" ]; then
+          python "$SCRIPT" "$TARGET" --args "$ARGS" --trace --power "$POWER" --ci "$CI" $JSON_OPT > "$OUT" || true
+        else
+          python "$SCRIPT" "$TARGET" --args "$ARGS" --safe-subprocess --power "$POWER" --ci "$CI" $JSON_OPT > "$OUT" || true
+        fi
+
+        echo "result_json=$PWD/$OUT" >> $GITHUB_OUTPUT
+
+        SCORE=$(python - <<'PY'
+import json,sys
+try:
+    obj=json.load(open("greencode_action_output.json"))
+except Exception:
+    print("0.0"); sys.exit(0)
+total=0.0
+if isinstance(obj, dict):
+    if "total_score" in obj:
+        total = obj["total_score"]
+    elif "total" in obj:
+        total = obj["total"]
+    elif "result" in obj and "total_score" in obj["result"]:
+        total = obj["result"]["total_score"]
+    else:
+        per = obj.get("result", obj).get("per_scope", obj.get("per_scope", {}))
+        if isinstance(per, dict):
+            total = sum(v.get("score",0) for v in per.values())
+print(total)
+PY
+)
+        echo "score=$SCORE" >> $GITHUB_OUTPUT
+
+    - name: Print summary
+      shell: bash
+      run: |
+        echo "Green Score = ${{ steps.run_analyzer.outputs.score }}"
+        echo "Result JSON: ${{ steps.run_analyzer.outputs.result_json }}"
