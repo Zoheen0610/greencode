@@ -7,7 +7,7 @@ branding:
 
 inputs:
   path:
-    description: "Path to target file or directory to analyze (default repo root). Use '${{ github.workspace }}' to analyze caller repo."
+    description: "Path to target file or directory to analyze (default: repo root). Provide the caller workspace when using this action (e.g. ${{ github.workspace }} in the caller workflow)."
     required: false
     default: "."
   mode:
