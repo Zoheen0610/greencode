@@ -27,6 +27,21 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Set, Tuple
 
+# -------------------------
+# Helpers
+# -------------------------
+def discover_python_files(target_path: str) -> List[str]:
+    """Return list of python files to analyze based on target_path."""
+    if os.path.isfile(target_path) and target_path.endswith(".py"):
+        return [os.path.abspath(target_path)]
+
+    files = []
+    for root, dirs, filenames in os.walk(target_path):
+        for fname in filenames:
+            if fname.endswith(".py"):
+                files.append(os.path.join(root, fname))
+    return sorted(files)
+
 # --- Static analysis (improved) -------------------------------------------------
 
 def add_parents(tree: ast.AST) -> None:
@@ -330,7 +345,7 @@ def merge_and_report(static_result: Dict[str, Any],
                      target_path: str,
                      as_json: bool = False) -> None:
 
-    per_scope = static_result["per_scope"]
+    per_scope = static_result.get("per_scope", {})
     # map static call-sites (per scope func_calls is count of call sites) to observed runtime counts
     # For readable report, produce:
     callsite_report = []
@@ -338,28 +353,28 @@ def merge_and_report(static_result: Dict[str, Any],
         # for the scope, extract loop lines and heavy allocations
         callsite_report.append({
             "scope": scope_name,
-            "loops": stats["loops"],
-            "max_loop_depth": stats["max_loop_depth"],
-            "loop_lines": stats["loop_lines"],
-            "heavy_allocations_in_loops": stats["heavy_allocations_in_loops"],
-            "func_calls_sites": stats["func_calls"],
-            "io_ops_sites": stats["io_ops"],
-            "cyclomatic": stats["cyclomatic"],
-            "score": stats["score"],
-            "recursion": stats["recursion"],
-            "comprehensions": stats["comprehensions"],
-            "conditionals": stats["conditionals"],
+            "loops": stats.get("loops", 0),
+            "max_loop_depth": stats.get("max_loop_depth", 0),
+            "loop_lines": stats.get("loop_lines", []),
+            "heavy_allocations_in_loops": stats.get("heavy_allocations_in_loops", []),
+            "func_calls_sites": stats.get("func_calls", 0),
+            "io_ops_sites": stats.get("io_ops", 0),
+            "cyclomatic": stats.get("cyclomatic", 0),
+            "score": stats.get("score", 0.0),
+            "recursion": stats.get("recursion", []),
+            "comprehensions": stats.get("comprehensions", 0),
+            "conditionals": stats.get("conditionals", 0),
+            "filename": stats.get("filename")
         })
 
     # Build per-function runtime summary (if we have dynamic_calls)
     funcs_runtime = []
     if dynamic_calls is not None:
         # dynamic_calls keys are function names (including '<module>' sometimes)
-        for scope_name in per_scope.keys():
-            # use static def lines to list user functions; dynamic may include nested names
-            runtime_count = 0
-            if scope_name in dynamic_calls:
-                runtime_count = dynamic_calls.get(scope_name, 0)
+        for scope_name, stats in per_scope.items():
+            # try to map using function name (scope key contains filename:func or similar)
+            func_base = stats.get("name", scope_name)
+            runtime_count = dynamic_calls.get(func_base, 0)
             funcs_runtime.append({"name": scope_name, "runtime_calls": runtime_count})
 
     # Loop iteration estimation from dynamic_lines
@@ -382,6 +397,10 @@ def merge_and_report(static_result: Dict[str, Any],
         "raw_dynamic_lines": dynamic_lines,
     }
 
+    # compute total score
+    total_score = sum(s.get("score", 0.0) for s in per_scope.values())
+    out["total_score"] = total_score
+
     if as_json:
         print(json.dumps(out, indent=2))
         return
@@ -390,13 +409,14 @@ def merge_and_report(static_result: Dict[str, Any],
     print(f"Target: {target_path}\n")
     # static summary per scope
     for scope, stats in per_scope.items():
-        print(f"Scope: {scope}" + (f" (line {stats['lineno']})" if stats['lineno'] else ""))
-        print(f"  Loops: {stats['loops']} (max depth {stats['max_loop_depth']})")
-        print(f"  Loop lines: {stats['loop_lines'] or 'None'}")
-        print(f"  Heavy allocs in loops: {stats['heavy_allocations_in_loops'] or 'None'}")
-        print(f"  Function-call sites: {stats['func_calls']}  |  I/O sites: {stats['io_ops']}")
-        print(f"  Comprehensions: {stats['comprehensions']}  |  Cyclomatic: {stats['cyclomatic']}")
-        print(f"  Score: {stats['score']:.2f}")
+        print(f"Scope: {scope}" + (f" (line {stats.get('lineno')})" if stats.get('lineno') else ""))
+        print(f"  File: {stats.get('filename')}")
+        print(f"  Loops: {stats.get('loops',0)} (max depth {stats.get('max_loop_depth',0)})")
+        print(f"  Loop lines: {stats.get('loop_lines') or 'None'}")
+        print(f"  Heavy allocs in loops: {stats.get('heavy_allocations_in_loops') or 'None'}")
+        print(f"  Function-call sites: {stats.get('func_calls',0)}  |  I/O sites: {stats.get('io_ops',0)}")
+        print(f"  Comprehensions: {stats.get('comprehensions',0)}  |  Cyclomatic: {stats.get('cyclomatic',0)}")
+        print(f"  Score: {stats.get('score',0.0):.2f}")
         print("")
 
     # dynamic summaries
@@ -413,11 +433,11 @@ def merge_and_report(static_result: Dict[str, Any],
 
     if energy_info is not None:
         print("Energy estimate:")
-        print(f"  Wall time: {energy_info['wall_seconds']:.4f} s")
+        print(f"  Wall time: {energy_info.get('wall_seconds',0.0):.4f} s")
         if "cpu_time_seconds" in energy_info:
-            print(f"  CPU time (est): {energy_info['cpu_time_seconds']:.4f} s")
-            print(f"  Energy: {energy_info['energy_joules']:.1f} J (~{energy_info['energy_kwh']:.6f} kWh)")
-            print(f"  CO2 est.: {energy_info['co2_grams']:.2f} g")
+            print(f"  CPU time (est): {energy_info.get('cpu_time_seconds',0.0):.4f} s")
+            print(f"  Energy: {energy_info.get('energy_joules',0.0):.1f} J (~{energy_info.get('energy_kwh',0.0):.6f} kWh)")
+            print(f"  CO2 est.: {energy_info.get('co2_grams',0.0):.2f} g")
         print("")
 
     # suggestions
@@ -435,7 +455,7 @@ def merge_and_report(static_result: Dict[str, Any],
 
 def main():
     p = argparse.ArgumentParser(description="Hybrid full analyzer: static checks + runtime measurements + energy estimate")
-    p.add_argument("target", help="Python file to analyze and run")
+    p.add_argument("target", help="Python file or directory to analyze and (optionally) run")
     p.add_argument("--args", type=str, default="", help="space-separated args for target")
     group = p.add_mutually_exclusive_group()
     group.add_argument("--trace", dest="trace", action="store_true", help="Run target in-process under tracer (default)")
@@ -449,46 +469,79 @@ def main():
 
     target = args.target
     if not os.path.exists(target):
-        print("Target not found:", target); sys.exit(1)
+        print("Target not found:", target)
+        sys.exit(1)
+
+    python_files = discover_python_files(target)
+    if not python_files:
+        print("No Python files found in target:", target)
+        sys.exit(0)
 
     extra_args = args.args.split() if args.args else []
     count_print = not args.no_print
     only_in_func = args.only_in_func
 
-    # static analysis
-    static_result, static_total = static_analyze_file(target, count_print=count_print, only_inside_functions=only_in_func)
+    # static analysis: aggregate across files
+    combined_static = {"per_scope": {}}
+    total_score = 0.0
 
-    # dynamic part
+    for file in python_files:
+        res, total = static_analyze_file(file, count_print=count_print, only_inside_functions=only_in_func)
+
+        # include filename in every scope and namespace the key by file+scope
+        for scope, data in res["per_scope"].items():
+            key = f"{os.path.relpath(file)}:{scope}"
+            # copy to avoid mutating original
+            entry = dict(data)
+            entry["filename"] = os.path.relpath(file)
+            combined_static["per_scope"][key] = entry
+
+        total_score += total
+
+    static_result = combined_static
+    static_total = total_score
+
+    # dynamic part (only sensible when a single file is provided)
     dynamic_calls = None
     dynamic_lines = None
     energy_info = None
 
     # choose mode
     trace_mode = True if (args.trace or not args.safe_subprocess) else False
-    if trace_mode:
-        # warn
-        print("=== Running target in-process under tracer (side-effects WILL run). Use --safe-subprocess for safer energy-only mode. ===")
-        dynamic_calls, dynamic_lines, wall = run_with_tracer_inprocess(target, extra_args)
-        # estimate energy from wall time (conservative) using given power
-        cpu_time_est = wall
-        energy_joules = cpu_time_est * args.power
-        energy_kwh = energy_joules / 3_600_000.0
-        co2 = energy_kwh * args.ci
-        energy_info = {
-            "wall_seconds": wall,
-            "cpu_time_seconds": cpu_time_est,
-            "energy_joules": energy_joules,
-            "energy_kwh": energy_kwh,
-            "co2_grams": co2
-        }
-    else:
-        # safe subprocess mode: measure energy & cpu approx using psutil
-        try:
-            energy_info = run_in_subprocess_measure_energy(target, extra_args, cpu_power_w=args.power, carbon_intensity_g_per_kwh=args.ci)
-        except Exception as e:
-            print("Subprocess energy measurement failed (psutil required). Error:", e)
-            energy_info = None
 
+    # If exactly one python file, we can run dynamic tracer or subprocess energy estimate against it.
+    if len(python_files) == 1:
+        single = python_files[0]
+        if trace_mode:
+            # warn
+            print("=== Running target in-process under tracer (side-effects WILL run). Use --safe-subprocess for safer energy-only mode. ===")
+            dynamic_calls, dynamic_lines, wall = run_with_tracer_inprocess(single, extra_args)
+            # estimate energy from wall time (conservative) using given power
+            cpu_time_est = wall
+            energy_joules = cpu_time_est * args.power
+            energy_kwh = energy_joules / 3_600_000.0
+            co2 = energy_kwh * args.ci
+            energy_info = {
+                "wall_seconds": wall,
+                "cpu_time_seconds": cpu_time_est,
+                "energy_joules": energy_joules,
+                "energy_kwh": energy_kwh,
+                "co2_grams": co2
+            }
+        else:
+            # safe subprocess mode: measure energy & cpu approx using psutil
+            try:
+                energy_info = run_in_subprocess_measure_energy(single, extra_args, cpu_power_w=args.power, carbon_intensity_g_per_kwh=args.ci)
+            except Exception as e:
+                print("Subprocess energy measurement failed (psutil required). Error:", e)
+                energy_info = None
+    else:
+        # many files: skip dynamic tracing for safety / practicality
+        dynamic_calls = None
+        dynamic_lines = None
+        energy_info = None
+
+    # produce merged report
     merge_and_report(static_result, dynamic_calls, dynamic_lines, energy_info, target, as_json=args.json)
 
 
